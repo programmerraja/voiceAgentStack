@@ -1,0 +1,13 @@
+[project]
+name = "voiceagentstack"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.13",
+    "kokoro-onnx>=0.3.3",
+    "pipecat-ai[fish,ollama,websocket,whisper]>=0.0.71",
+    "python-dotenv>=1.1.0",
+    "uvicorn>=0.34.3",
+]

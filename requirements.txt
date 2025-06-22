@@ -1,0 +1,4 @@
+pipecat-ai[webrtc,deepgram,openai,websocket]
+python-dotenv
+fastapi
+uvicorn 
