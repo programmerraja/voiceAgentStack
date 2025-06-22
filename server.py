@@ -13,7 +13,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from bot.bot_fast_api import run_bot
+# from bot.bot_fast_api import run_bot
 from bot.bot_websocket_server import run_bot_websocket_server
 
 

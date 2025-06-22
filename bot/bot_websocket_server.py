@@ -25,6 +25,8 @@ from pipecat.transports.network.websocket_server import (
 import aiohttp
 
 from service.Kokoro.tts import KokoroTTSService
+from service.orpheus.tts import OrpheusTTSService
+from service.chatterbot.tts import ChatterboxTTSService
 
 SYSTEM_INSTRUCTION = f"""
 "You are Gemini Chatbot, a friendly, helpful robot.
@@ -90,13 +92,22 @@ async def run_bot_websocket_server():
     # RTVI events for Pipecat client UI
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
     
-    TTS = KokoroTTSService(
-        model_path=os.path.join(os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"),
-        voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
-        voice_id="af",
+    # TTS = KokoroTTSService(
+    #     model_path=os.path.join(os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"),
+    #     voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
+    #     voice_id="af",
+    #     sample_rate=16000,
+    # )
+
+    # TTS = OrpheusTTSService(
+    #     model_name="canopylabs/orpheus-3b-0.1-ft",
+    #     sample_rate=16000,
+    # )
+    
+    TTS = ChatterboxTTSService(
+        model_name="",
         sample_rate=16000,
     )
-
     pipeline = Pipeline(
         [
             ws_transport.input(),
