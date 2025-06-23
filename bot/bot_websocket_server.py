@@ -9,10 +9,10 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 
 from pipecat.services.ollama.llm import OLLamaLLMService
+
 # from pipecat.services.fish.tts import FishAudioTTSService
 from pipecat.services.xtts.tts import XTTSService
 from pipecat.transcriptions.language import Language
-
 
 
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
@@ -26,7 +26,7 @@ import aiohttp
 
 from service.Kokoro.tts import KokoroTTSService
 from service.orpheus.tts import OrpheusTTSService
-from service.chatterbot.tts import ChatterboxTTSService
+# from service.chatterbot.tts import ChatterboxTTSService
 
 SYSTEM_INSTRUCTION = f"""
 "You are Gemini Chatbot, a friendly, helpful robot.
@@ -62,7 +62,7 @@ async def run_bot_websocket_server():
         model="smollm:latest",
         # params=OLLamaLLMService.InputParams(temperature=0.7, max_tokens=1000),
     )
-    
+
     # TTS = FishAudioTTSService(
     #     api_key=os.getenv("CARTESIA_API_KEY"),
     #     voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Reading Lady
@@ -84,30 +84,32 @@ async def run_bot_websocket_server():
             {
                 "role": "user",
                 "content": "Start by greeting the user warmly and introducing yourself.",
-            }
+            },
         ],
     )
     context_aggregator = llm.create_context_aggregator(context)
 
     # RTVI events for Pipecat client UI
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
-    
-    # TTS = KokoroTTSService(
-    #     model_path=os.path.join(os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"),
-    #     voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
-    #     voice_id="af",
-    #     sample_rate=16000,
-    # )
+
+    TTS = KokoroTTSService(
+        model_path=os.path.join(
+            os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
+        ),
+        voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
+        voice_id="af",
+        sample_rate=16000,
+    )
 
     # TTS = OrpheusTTSService(
     #     model_name="canopylabs/orpheus-3b-0.1-ft",
     #     sample_rate=16000,
     # )
-    
-    TTS = ChatterboxTTSService(
-        model_name="",
-        sample_rate=16000,
-    )
+
+    # TTS = ChatterboxTTSService(
+    #     model_name="",
+    #     sample_rate=16000,
+    # )
     pipeline = Pipeline(
         [
             ws_transport.input(),
@@ -122,13 +124,13 @@ async def run_bot_websocket_server():
     )
 
     task = PipelineTask(
-            pipeline,
-            params=PipelineParams(
-                enable_metrics=True,
-                enable_usage_metrics=True,
-            ),
-            observers=[RTVIObserver(rtvi)],
-        )
+        pipeline,
+        params=PipelineParams(
+            enable_metrics=True,
+            enable_usage_metrics=True,
+        ),
+        observers=[RTVIObserver(rtvi)],
+    )
 
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi):
