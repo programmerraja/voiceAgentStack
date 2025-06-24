@@ -7,16 +7,21 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from pipecat.services.ollama.llm import OLLamaLLMService
 
 # from pipecat.services.fish.tts import FishAudioTTSService
-from pipecat.services.xtts.tts import XTTSService
+# from pipecat.services.xtts.tts import XTTSService
 from pipecat.transcriptions.language import Language
-
+# from service.Dia.tts import DiaTTSService
 
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
+from pipecat.transports.network.fastapi_websocket import (
+    FastAPIWebsocketParams,
+    FastAPIWebsocketTransport,
+)
 from pipecat.services.whisper.stt import WhisperSTTService
 from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
@@ -24,9 +29,13 @@ from pipecat.transports.network.websocket_server import (
 )
 import aiohttp
 
+from dotenv import load_dotenv
 from service.Kokoro.tts import KokoroTTSService
-from service.orpheus.tts import OrpheusTTSService
+# from service.orpheus.tts import OrpheusTTSService
+
 # from service.chatterbot.tts import ChatterboxTTSService
+
+from pipecat.utils.tracing.setup import setup_tracing
 
 SYSTEM_INSTRUCTION = f"""
 "You are Gemini Chatbot, a friendly, helpful robot.
@@ -38,17 +47,34 @@ Your output will be converted to audio so don't include special characters in yo
 Respond to what the user said in a creative and helpful way. Keep your responses brief. One or two sentences at most.
 """
 
+load_dotenv(override=True)
 
-async def run_bot_websocket_server():
-    ws_transport = WebsocketServerTransport(
-        params=WebsocketServerParams(
-            serializer=ProtobufFrameSerializer(),
+IS_TRACING_ENABLED = bool(os.getenv("ENABLE_TRACING"))
+
+# Initialize tracing if enabled
+if IS_TRACING_ENABLED:
+    # Create the exporter
+    otlp_exporter = OTLPSpanExporter()
+
+    # Set up tracing with the exporter
+    setup_tracing(
+        service_name="voice-agent-stack",
+        exporter=otlp_exporter,
+        console_export=bool(os.getenv("OTEL_CONSOLE_EXPORT")),
+    )
+    logger.info("OpenTelemetry tracing initialized")
+
+
+async def run_bot_websocket_server(websocket_client):
+    ws_transport = FastAPIWebsocketTransport(
+        websocket=websocket_client,
+        params=FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
             vad_analyzer=SileroVADAnalyzer(),
-            session_timeout=60 * 3,  # 3 minutes
-        )
+            serializer=ProtobufFrameSerializer(),
+        ),
     )
 
     stt = WhisperSTTService(
@@ -81,7 +107,7 @@ async def run_bot_websocket_server():
                 "role": "system",
                 "content": SYSTEM_INSTRUCTION,
             },
-            {
+            {   
                 "role": "user",
                 "content": "Start by greeting the user warmly and introducing yourself.",
             },
@@ -94,7 +120,7 @@ async def run_bot_websocket_server():
 
     TTS = KokoroTTSService(
         model_path=os.path.join(
-            os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
+            os.path.dirname(__file__), "assets", "kokoro-v1.0.fp16-gpu.onnx"
         ),
         voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
         voice_id="af",
@@ -108,6 +134,11 @@ async def run_bot_websocket_server():
 
     # TTS = ChatterboxTTSService(
     #     model_name="",
+    #     sample_rate=16000,
+    # )
+
+    # TTS = DiaTTSService(
+    #     model_name="nari-labs/Dia-1.6B",
     #     sample_rate=16000,
     # )
     pipeline = Pipeline(
@@ -127,8 +158,12 @@ async def run_bot_websocket_server():
         pipeline,
         params=PipelineParams(
             enable_metrics=True,
+            allow_interruptions=True,
             enable_usage_metrics=True,
         ),
+        # enable_turn_tracking=True,
+        enable_tracing=IS_TRACING_ENABLED,
+        conversation_id="voice-agent-conversation-1",
         observers=[RTVIObserver(rtvi)],
     )
 

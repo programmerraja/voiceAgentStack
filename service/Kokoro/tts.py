@@ -7,7 +7,10 @@
 
 
 import numpy as np
+import asyncio
 from typing import AsyncGenerator, List, Optional, Union
+from pipecat.utils.tracing.service_decorators import traced_tts
+
 
 from loguru import logger
 from pydantic import BaseModel
@@ -21,6 +24,8 @@ from pipecat.frames.frames import (
 )
 from pipecat.services.tts_service import TTSService
 from pipecat.transcriptions.language import Language
+from pipecat.services.tts_service import InterruptibleTTSService
+
 
 # load Kokoro from kokoro-onnx
 try:
@@ -56,7 +61,7 @@ def language_to_kokoro_language(language: Language) -> Optional[str]:
     return result
 
 
-class KokoroTTSService(TTSService):
+class KokoroTTSService(InterruptibleTTSService):
     """Text-to-Speech service using Kokoro for on-device TTS.
     
     This service uses Kokoro to generate speech without requiring external API connections.
@@ -96,6 +101,10 @@ class KokoroTTSService(TTSService):
             "speed": params.speed,
         }
         self.set_voice(voice_id)  # Presumably this sets self._voice_id
+        
+        # Initialize interrupt handling
+        self._interrupt_event = asyncio.Event()
+        self._current_stream = None
 
         logger.info("Kokoro TTS service initialized")
 
@@ -106,6 +115,41 @@ class KokoroTTSService(TTSService):
         """Convert pipecat language to Kokoro language code."""
         return language_to_kokoro_language(language)
 
+   
+    async def _disconnect(self):
+        """Handle disconnection and interrupt current streaming."""
+        logger.info("Disconnecting Kokoro TTS service - stopping current stream")
+        
+        # Signal interruption
+        if not self._interrupt_event.is_set():
+            self._interrupt_event.set()
+        
+        # Reset the current stream reference
+        self._current_stream = None
+        
+        logger.info("Kokoro TTS service disconnected")
+
+    async def interrupt(self):
+        """Public method to interrupt current TTS generation."""
+        logger.info("Interrupting current TTS generation")
+        await self._disconnect()
+        
+    async def _connect(self):
+        """Handle connection - reset interrupt state."""
+        logger.info("Connecting Kokoro TTS service")
+        self._interrupt_event.clear()
+    
+    async def _disconnect_websocket(self):
+        pass
+
+    async def _connect_websocket(self):
+        pass
+    
+    
+    async def _receive_messages(self):
+        pass
+    
+    @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         """Generate speech from text using Kokoro in a streaming fashion.
         
@@ -116,6 +160,10 @@ class KokoroTTSService(TTSService):
             Frames containing audio data and status information.
         """
         logger.debug(f"Generating TTS: [{text}]")
+        
+        # Clear any previous interrupt state
+        self._interrupt_event.clear()
+        
         try:
             await self.start_ttfb_metrics()
             yield TTSStartedFrame()
@@ -123,37 +171,26 @@ class KokoroTTSService(TTSService):
             # Use Kokoro's streaming mode. The create_stream method is assumed to return
             # an async generator that yields (samples, sample_rate) tuples, where samples is a numpy array.
             logger.info(f"Creating stream")
-            stream = self._kokoro.create_stream(
+            self._current_stream = self._kokoro.create_stream(
                 text,
                 voice=self._voice_id,
                 speed=self._settings["speed"],
                 lang=self._settings["language"],
             )
 
-
             await self.start_tts_usage_metrics(text)
             started = False
-            async for samples, sample_rate in stream:
+            
+            # Stream with interrupt checking - no need for asyncio.create_task
+            async for samples, sample_rate in self._current_stream:
+                # Check for interruption before processing each chunk
+                if self._interrupt_event.is_set():
+                    logger.info("TTS generation interrupted")
+                    break
+                    
                 if not started:
                     started = True
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
-                    logger.info(f"Started streaming")
+                    
                 # Convert the float32 samples (assumed in the range [-1, 1]) to int16 PCM format
                 samples_int16 = (samples * 32767).astype(np.int16)
                 yield TTSAudioRawFrame(
@@ -164,6 +201,12 @@ class KokoroTTSService(TTSService):
 
             yield TTSStoppedFrame()
 
+        except asyncio.CancelledError:
+            logger.info("TTS generation was cancelled")
+            yield TTSStoppedFrame()
         except Exception as e:
             logger.error(f"{self} exception: {e}")
             yield ErrorFrame(f"Error generating audio: {str(e)}")
+        finally:
+            # Clean up
+            self._current_stream = None

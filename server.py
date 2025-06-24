@@ -45,37 +45,38 @@ app.add_middleware(
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket connection accepted")
-    # try:
-    #     await run_bot(websocket)
-    # except Exception as e:
-    #     print(f"Exception in run_bot: {e}")
+    try:
+        await run_bot_websocket_server(websocket)
+    except Exception as e:
+        print(f"Exception in run_bot: {e}")
 
 
 @app.post("/connect")
 async def bot_connect(request: Request) -> Dict[Any, Any]:
-    server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
-    if server_mode == "websocket_server":
-        ws_url = "ws://localhost:8765"
-    else:
-        ws_url = "ws://localhost:7860/ws"
-    return {"ws_url": ws_url}
+    return {"ws_url": "ws://localhost:7860/ws"}
 
 
 async def main():
-    server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
-    tasks = []
-    try:
-        if server_mode == "websocket_server":
-            tasks.append(run_bot_websocket_server())
-
-        config = uvicorn.Config(app, host="0.0.0.0", port=7860)
-        server = uvicorn.Server(config)
-        tasks.append(server.serve())
-
-        await asyncio.gather(*tasks)
-    except asyncio.CancelledError:
-        print("Tasks cancelled (probably due to shutdown).")
+    config = uvicorn.Config(app, host="0.0.0.0", port=7860)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import signal
+
+    async def serve():
+        config = uvicorn.Config(app, host="0.0.0.0", port=7860)
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        loop.run_until_complete(serve())
+    except KeyboardInterrupt:
+        print("Received exit signal (Ctrl+C), shutting down...")
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()

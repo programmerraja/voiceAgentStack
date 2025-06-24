@@ -1,0 +1,10 @@
+.git
+.gitignore
+__pycache__
+node_modules
+client/node_modules
+.env
+Dockerfile
+.dockerignore
+README.md
+LICENSE 
