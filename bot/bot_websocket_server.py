@@ -28,10 +28,11 @@ from pipecat.transports.network.websocket_server import (
     WebsocketServerTransport,
 )
 import aiohttp
-
+from pipecat.services.openai.tts import OpenAITTSService
 from dotenv import load_dotenv
-from service.Kokoro.tts import KokoroTTSService
+# from service.Kokoro.tts import KokoroTTSService
 # from service.orpheus.tts import OrpheusTTSService
+
 
 # from service.chatterbot.tts import ChatterboxTTSService
 
@@ -118,14 +119,19 @@ async def run_bot_websocket_server(websocket_client):
     # RTVI events for Pipecat client UI
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
-    TTS = KokoroTTSService(
-        model_path=os.path.join(
-            os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
-        ),
-        voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
-        voice_id="af",
-        sample_rate=16000,
+    # TTS = KokoroTTSService(
+    #     model_path=os.path.join(
+    #         os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
+    #     ),
+    #     voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
+    #     voice_id="af",
+    #     sample_rate=16000,
+    # )
+    
+    TTS = OpenAITTSService(
+       base_url="http://localhost:8880/v1", api_key="not-needed", model="kokoro", sample_rate=16000
     )
+    
 
     # TTS = OrpheusTTSService(
     #     model_name="canopylabs/orpheus-3b-0.1-ft",
