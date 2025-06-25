@@ -39,6 +39,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+@app.get("/")
+async def root():
+    return {"status": "ok"}  # 🔁 HTTP 200
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}  
 
 
 @app.websocket("/ws")
@@ -53,7 +60,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/connect")
 async def bot_connect(request: Request) -> Dict[Any, Any]:
-    return {"ws_url": "ws://localhost:7860/ws"}
+    # return {"ws_url": "ws://localhost:7860/ws"}
+    ws_url = "wss://7861-01jy2wkc2p4tvtwa6kv8sn28aw.cloudspaces.litng.ai/ws"
+    return {"ws_url": ws_url}
 
 
 async def main():
