@@ -146,8 +146,13 @@ class WebsocketClientApp {
         transport,
         params: {
           // The baseURL and endpoint of your bot server that the client will connect to
-          baseUrl: 'http://localhost:7860',
+          // baseUrl: 'https://7861-01jy2wkc2p4tvtwa6kv8sn28aw.cloudspaces.litng.ai',
+           baseUrl: 'http://localhost:7860',
+          // baseUrl:"https://klentyboopathi-voicestack.hf.space",
           endpoints: { connect: '/connect' },
+          headers: new Headers( {
+            "Authorization": "Bearer 72dc0bce-f2da-4585-a6df-6f1160980dc0"
+          })
         },
         enableMic: true,
         enableCam: false,

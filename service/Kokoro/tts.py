@@ -60,7 +60,7 @@ def language_to_kokoro_language(language: Language) -> Optional[str]:
 
     return result
 
-
+MODEL = None
 class KokoroTTSService(InterruptibleTTSService):
     """Text-to-Speech service using Kokoro for on-device TTS.
     
@@ -81,6 +81,7 @@ class KokoroTTSService(InterruptibleTTSService):
         params: InputParams = InputParams(),
         **kwargs,
     ):
+        global MODEL
         """Initialize Kokoro TTS service.
         
         Args:
@@ -92,7 +93,8 @@ class KokoroTTSService(InterruptibleTTSService):
         """
         super().__init__(sample_rate=sample_rate, **kwargs)
         logger.info(f"Initializing Kokoro TTS service with model_path: {model_path} and voices_path: {voices_path}")
-        self._kokoro = Kokoro(model_path, voices_path)
+        self._kokoro = MODEL or Kokoro(model_path, voices_path)
+        MODEL = self._kokoro
         logger.info(f"Kokoro initialized")
         self._settings = {
             "language": self.language_to_service_language(params.language)

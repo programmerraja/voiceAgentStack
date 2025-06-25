@@ -22,7 +22,7 @@ from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
 )
-from pipecat.services.whisper.stt import WhisperSTTService
+from service.whisper.stt import WhisperSTTService
 from pipecat.transports.network.websocket_server import (
     WebsocketServerParams,
     WebsocketServerTransport,
@@ -120,7 +120,7 @@ async def run_bot_websocket_server(websocket_client):
 
     TTS = KokoroTTSService(
         model_path=os.path.join(
-            os.path.dirname(__file__), "assets", "kokoro-v1.0.fp16-gpu.onnx"
+            os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
         ),
         voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
         voice_id="af",
