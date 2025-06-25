@@ -29,7 +29,7 @@ from pipecat.services.tts_service import InterruptibleTTSService
 
 # load Kokoro from kokoro-onnx
 try:
-    from kokoro_onnx import Kokoro
+    from service.Kokoro.kokoro_onnx import Kokoro
 except ModuleNotFoundError as e:
     logger.error(f"Exception: {e}")
     logger.error(
@@ -107,6 +107,7 @@ class KokoroTTSService(InterruptibleTTSService):
         # Initialize interrupt handling
         self._interrupt_event = asyncio.Event()
         self._current_stream = None
+        self._cancel_event = asyncio.Event()
 
         logger.info("Kokoro TTS service initialized")
 
@@ -119,17 +120,10 @@ class KokoroTTSService(InterruptibleTTSService):
 
    
     async def _disconnect(self):
-        """Handle disconnection and interrupt current streaming."""
         logger.info("Disconnecting Kokoro TTS service - stopping current stream")
-        
-        # Signal interruption
-        if not self._interrupt_event.is_set():
-            self._interrupt_event.set()
-        
-        # Reset the current stream reference
+        self._interrupt_event.set()
+        self._cancel_event.set()
         self._current_stream = None
-        
-        logger.info("Kokoro TTS service disconnected")
 
     async def interrupt(self):
         """Public method to interrupt current TTS generation."""
@@ -140,7 +134,8 @@ class KokoroTTSService(InterruptibleTTSService):
         """Handle connection - reset interrupt state."""
         logger.info("Connecting Kokoro TTS service")
         self._interrupt_event.clear()
-    
+        self._cancel_event.clear()
+
     async def _disconnect_websocket(self):
         pass
 
@@ -178,6 +173,7 @@ class KokoroTTSService(InterruptibleTTSService):
                 voice=self._voice_id,
                 speed=self._settings["speed"],
                 lang=self._settings["language"],
+                cancel_event=self._cancel_event,
             )
 
             await self.start_tts_usage_metrics(text)
@@ -212,3 +208,5 @@ class KokoroTTSService(InterruptibleTTSService):
         finally:
             # Clean up
             self._current_stream = None
+            self._cancel_event.clear()
+            self._interrupt_event.clear()

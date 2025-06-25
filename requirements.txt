@@ -13,8 +13,8 @@ opentelemetry-exporter-otlp-proto-http>=1.20.0
 opentelemetry-instrumentation>=0.41b0
 
 # Orpheus and Kokoro
-orpheus-speech>=0.1.0
+# orpheus-speech>=0.1.0
 kokoro-onnx>=0.3.3
-chatterbox-tts
+# chatterbox-tts
 gradio>=4.42.0
 aiohttp>=3.9.5

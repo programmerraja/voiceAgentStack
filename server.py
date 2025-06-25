@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # from bot.bot_fast_api import run_bot
 from bot.bot_websocket_server import run_bot_websocket_server
 
+import faulthandler
+faulthandler.enable()
 
 # Load environment variables
 load_dotenv(override=True)
