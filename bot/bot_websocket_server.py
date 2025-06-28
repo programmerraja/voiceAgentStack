@@ -17,7 +17,9 @@ from pipecat.transcriptions.language import Language
 # from service.Dia.tts import DiaTTSService
 
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
+from frameworks.elevenlabs import ElevenLabsObserver, ElevenLabsProcessor
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
+from serializers.elevenlabs import ElevenLabsFrameSerializer
 from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
@@ -30,7 +32,7 @@ from pipecat.transports.network.websocket_server import (
 import aiohttp
 from pipecat.services.openai.tts import OpenAITTSService
 from dotenv import load_dotenv
-# from service.Kokoro.tts import KokoroTTSService
+from service.Kokoro.tts import KokoroTTSService
 # from service.orpheus.tts import OrpheusTTSService
 
 
@@ -74,7 +76,8 @@ async def run_bot_websocket_server(websocket_client):
             audio_out_enabled=True,
             add_wav_header=False,
             vad_analyzer=SileroVADAnalyzer(),
-            serializer=ProtobufFrameSerializer(),
+            serializer=ElevenLabsFrameSerializer(params=ElevenLabsFrameSerializer.InputParams(audio_format="ulaw",sample_rate=8000)),
+            # serializer=ProtobufFrameSerializer(),
         ),
     )
 
@@ -108,7 +111,7 @@ async def run_bot_websocket_server(websocket_client):
                 "role": "system",
                 "content": SYSTEM_INSTRUCTION,
             },
-            {   
+            {
                 "role": "user",
                 "content": "Start by greeting the user warmly and introducing yourself.",
             },
@@ -117,7 +120,8 @@ async def run_bot_websocket_server(websocket_client):
     context_aggregator = llm.create_context_aggregator(context)
 
     # RTVI events for Pipecat client UI
-    rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
+    # rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
+    # elvenlabs = ElevenLabsProcessor()
 
     # TTS = KokoroTTSService(
     #     model_path=os.path.join(
@@ -127,11 +131,13 @@ async def run_bot_websocket_server(websocket_client):
     #     voice_id="af",
     #     sample_rate=16000,
     # )
-    
+
     TTS = OpenAITTSService(
-       base_url="http://localhost:8880/v1", api_key="not-needed", model="kokoro", sample_rate=16000
+        base_url="http://localhost:8880/v1",
+        api_key="not-needed",
+        model="kokoro",
+        sample_rate=24000,
     )
-    
 
     # TTS = OrpheusTTSService(
     #     model_name="canopylabs/orpheus-3b-0.1-ft",
@@ -150,7 +156,8 @@ async def run_bot_websocket_server(websocket_client):
     pipeline = Pipeline(
         [
             ws_transport.input(),
-            rtvi,
+            # elvenlabs,
+            # rtvi,
             stt,  # STT
             context_aggregator.user(),
             llm,
@@ -170,15 +177,16 @@ async def run_bot_websocket_server(websocket_client):
         # enable_turn_tracking=True,
         enable_tracing=IS_TRACING_ENABLED,
         conversation_id="voice-agent-conversation-1",
-        observers=[RTVIObserver(rtvi)],
+        # observers=[RTVIObserver(rtvi)],
+        # observers=[ElevenLabsObserver(elvenlabs)],
     )
 
-    @rtvi.event_handler("on_client_ready")
-    async def on_client_ready(rtvi):
-        logger.info("Pipecat client ready.")
-        await rtvi.set_bot_ready()
+    # @rtvi.event_handler("on_client_ready")
+    # async def on_client_ready(rtvi):
+    #     logger.info("Pipecat client ready.")
+    #     await rtvi.set_bot_ready()
         # Kick off the conversation.
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
+        # await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @ws_transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):

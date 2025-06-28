@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bi-Directional Audio Chat</title>
+</head>
+<body>
+  <h2>🎙️ Talk to Bot</h2>
+  <button id="start">Start</button>
+  <button id="stop">Stop</button>
+  <p>Status: <span id="status">Disconnected</span></p>
+
+  <script>
+    // === AudioProcessor (Mic Input) ===
+    const AudioProcessorWorklet = `
+    class AudioProcessor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+      }
+
+      process(inputs) {
+        const input = inputs[0];
+        if (!input || !input.length || !input[0].length) return true;
+
+        const samples = input[0]; // mono channel
+        const int16 = new Int16Array(samples.length);
+        for (let i = 0; i < samples.length; i++) {
+          let s = Math.max(-1, Math.min(1, samples[i]));
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+
+        this.port.postMessage(int16.buffer, [int16.buffer]);
+        return true;
+      }
+    }
+    registerProcessor("audio_processor", AudioProcessor);
+    `;
+
+    // === StreamProcessor (Bot Output) ===
+    // This AudioWorkletProcessor receives base64-encoded PCM audio from the main thread,
+    // decodes it, converts it to Float32 samples, and outputs it to the speakers.
+    const StreamProcessorWorklet = `
+    class StreamProcessor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        // Queue to hold decoded audio buffers waiting to be played
+        this.bufferQueue = [];
+        // Index tracking our current playhead inside the first buffer
+        this.currentBufferOffset = 0;
+        // Listen for messages from the main thread (already base64-decoded binary string)
+        this.port.onmessage = (e) => {
+          const binary = e.data; // binary string (each char == one byte)
+
+          // --- Convert binary string ➜ Int16 PCM samples ---
+          const pcm = new Int16Array(binary.length >> 1); // /2
+          for (let i = 0, j = 0; i < pcm.length; i++, j += 2) {
+            // Combine little-endian bytes into 16-bit sample
+            pcm[i] = binary.charCodeAt(j) | (binary.charCodeAt(j + 1) << 8);
+          }
+
+          // --- Int16 ➜ Float32 in [-1, 1] ---
+          const float32 = new Float32Array(pcm.length);
+          for (let i = 0; i < pcm.length; i++) {
+            float32[i] = pcm[i] / 0x8000;
+          }
+
+          // Push the decoded buffer to the queue
+          this.bufferQueue.push(float32);
+        };
+      }
+
+      // Called by the audio system to fill the output buffer
+      process(inputs, outputs) {
+        const output = outputs[0][0]; // mono channel
+        let outIdx = 0;
+
+        while (outIdx < output.length) {
+          if (this.bufferQueue.length === 0) {
+            // Nothing queued – emit silence and exit early
+            while (outIdx < output.length) output[outIdx++] = 0;
+            break;
+          }
+
+          const current = this.bufferQueue[0];
+          const available = current.length - this.currentBufferOffset;
+          const needed = output.length - outIdx;
+          const copyCount = Math.min(available, needed);
+
+          // Copy samples from current queued buffer into output
+          output.set(
+            current.subarray(this.currentBufferOffset, this.currentBufferOffset + copyCount),
+            outIdx
+          );
+
+          // Advance pointers
+          outIdx += copyCount;
+          this.currentBufferOffset += copyCount;
+
+          // If we consumed the current buffer, remove it and reset offset
+          if (this.currentBufferOffset >= current.length) {
+            this.bufferQueue.shift();
+            this.currentBufferOffset = 0;
+          }
+        }
+
+        // Keep processor alive
+        return true;
+      }
+    }
+    // Register the processor so it can be used in the AudioWorklet
+    registerProcessor("stream_processor", StreamProcessor);
+    `;
+
+    const statusEl = document.getElementById("status");
+    const startBtn = document.getElementById("start");
+    const stopBtn = document.getElementById("stop");
+
+    let context, inputNode, outputNode, socket;
+
+    startBtn.onclick = async () => {
+      // AudioContext with 16kHz sample rate
+      context = new AudioContext({ sampleRate: 24000 });
+
+      // Create worklets
+      const inputBlob = new Blob([AudioProcessorWorklet], { type: "application/javascript" });
+      const outputBlob = new Blob([StreamProcessorWorklet], { type: "application/javascript" });
+
+      await context.audioWorklet.addModule(URL.createObjectURL(inputBlob));
+      await context.audioWorklet.addModule(URL.createObjectURL(outputBlob));
+
+      // Mic input → AudioProcessor
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micSource = context.createMediaStreamSource(micStream);
+      inputNode = new AudioWorkletNode(context, "audio_processor");
+      micSource.connect(inputNode);
+
+      // Output processor → speakers
+      outputNode = new AudioWorkletNode(context, "stream_processor");
+      outputNode.connect(context.destination);
+
+      // WebSocket connection
+      socket = new WebSocket("ws://localhost:7860/ws"); // Change to your backend
+      socket.binaryType = "arraybuffer";
+
+      socket.onopen = () => {
+        statusEl.textContent = "Connected";
+        console.log("🔗 WebSocket connected");
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if(msg.type === "audio") {
+            const base64 = msg.audio_event.audio_base_64;
+            
+            // socket.send(JSON.stringify({ user_audio_chunk: base64 }));
+            if (base64) outputNode.port.postMessage(atob(base64));
+          }
+         
+        } catch (e) {
+          console.error("Invalid message:", e);
+        }
+      };
+
+      // Mic audio → encode → send as base64
+      inputNode.port.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer && socket.readyState === WebSocket.OPEN) {
+          const base64 = arrayBufferToBase64(e.data);
+          socket.send(JSON.stringify({ user_audio_chunk: base64 }));
+        }
+      };
+    };
+
+    stopBtn.onclick = () => {
+      socket?.close();
+      context?.close();
+      statusEl.textContent = "Disconnected";
+    };
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+  </script>
+</body>
+</html>
+
