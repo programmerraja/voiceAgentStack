@@ -1,0 +1,13 @@
+[
+  {
+    "type": "webhook",
+    "name": "get_spells",
+    "description": "use this to get the spells for the user ",
+    "api_schema": {
+      "url": "https://potterapi-fedeperin.vercel.app/en/spells",
+      "method": "GET",
+      "request_headers": []
+    },
+    "response_timeout_secs": 30
+  }
+]

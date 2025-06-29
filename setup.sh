@@ -5,3 +5,4 @@ wget https://huggingface.co/NeuML/kokoro-base-onnx/resolve/main/voices.json -O /
 curl -fsSL https://ollama.com/install.sh | sh 
 # ollama serve &
 # ollama pull smollm &
+docker run --gpus all -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest

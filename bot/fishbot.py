@@ -11,10 +11,6 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 from pipecat.services.ollama.llm import OLLamaLLMService
 
-# from pipecat.services.fish.tts import FishAudioTTSService
-# from pipecat.services.xtts.tts import XTTSService
-from pipecat.transcriptions.language import Language
-# from service.Dia.tts import DiaTTSService
 
 from serializers.elevenlabs import ElevenLabsFrameSerializer
 from pipecat.transports.network.fastapi_websocket import (
@@ -65,7 +61,7 @@ if IS_TRACING_ENABLED:
     logger.info("OpenTelemetry tracing initialized")
 
 
-async def run_bot_websocket_server(websocket_client):
+async def run_fishbot(websocket_client):
     ws_transport = FastAPIWebsocketTransport(
         websocket=websocket_client,
         params=FastAPIWebsocketParams(
@@ -73,7 +69,7 @@ async def run_bot_websocket_server(websocket_client):
             audio_out_enabled=True,
             add_wav_header=False,
             vad_analyzer=SileroVADAnalyzer(),
-            serializer=ElevenLabsFrameSerializer(params=ElevenLabsFrameSerializer.InputParams(audio_format="ulaw",sample_rate=8000)),
+            serializer=ElevenLabsFrameSerializer(),
         ),
     )
 
@@ -89,17 +85,7 @@ async def run_bot_websocket_server(websocket_client):
         # params=OLLamaLLMService.InputParams(temperature=0.7, max_tokens=1000),
     )
 
-    # TTS = FishAudioTTSService(
-    #     api_key=os.getenv("CARTESIA_API_KEY"),
-    #     voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Reading Lady
-    # )
-    # async with aiohttp.ClientSession() as session:
-    #     TTS = XTTSService(
-    #         voice_id="speaker_1",
-    #         language=Language.EN,
-    #         base_url="http://localhost:8000",
-    #         aiohttp_session=session
-    #     )
+   
 
     context = OpenAILLMContext(
         [
@@ -129,10 +115,11 @@ async def run_bot_websocket_server(websocket_client):
     # )
 
     TTS = OpenAITTSService(
-        base_url="http://localhost:8880/v1",
+        base_url="http://localhost:5005/v1",
         api_key="not-needed",
-        model="kokoro",
+        model="tara",
         sample_rate=24000,
+        voice="tara",
     )
 
     # TTS = OrpheusTTSService(
@@ -152,10 +139,10 @@ async def run_bot_websocket_server(websocket_client):
     pipeline = Pipeline(
         [
             ws_transport.input(),
-            stt, 
+            stt,  # STT
             context_aggregator.user(),
             llm,
-            TTS,  
+            TTS,  # TTS
             ws_transport.output(),
             context_aggregator.assistant(),
         ]

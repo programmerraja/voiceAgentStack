@@ -18,7 +18,7 @@ from pipecat.frames.frames import (
     TransportMessageFrame,
     TransportMessageUrgentFrame,
 )
-from frameworks.elevenlabs import ElevenLabsConversationInitiationFrame
+from frameworks.elevenlabs import ElevenLabsConversationInitiationFrame, ConversationConfig
 from pipecat.serializers.base_serializer import FrameSerializer, FrameSerializerType
 
 
@@ -165,7 +165,7 @@ class ElevenLabsFrameSerializer(FrameSerializer):
         
         elif msg_type == "conversation_initiation_client_data":
             return ElevenLabsConversationInitiationFrame(
-                conversation_config_override=message.get("conversation_config_override", {}),
+                conversation_config_override=ConversationConfig(**message.get("conversation_config_override", {})),
                 custom_llm_extra_body=message.get("custom_llm_extra_body"),
                 dynamic_variables=message.get("dynamic_variables"),
             )

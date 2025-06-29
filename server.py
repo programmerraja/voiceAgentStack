@@ -14,9 +14,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-# from bot.bot_fast_api import run_bot
-from bot.bot_websocket_server import run_bot_websocket_server
-
+import traceback
 import faulthandler
 
 faulthandler.enable()
@@ -59,16 +57,22 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket connection accepted")
     try:
-        await run_bot_websocket_server(websocket)
+        # Serve Moshi streaming STT over /ws in an OpenAI-compatible schema
+        from bot.voice_agent import VoiceAgent
+
+        bot = VoiceAgent(websocket)
+        await bot.run()
     except Exception as e:
-        print(f"Exception in run_bot: {e}")
+        #print stack trace and line number
+        print(f"Exception in run_bot: {e}",e)
+        print(traceback.print_exc())
 
 
 @app.post("/connect")
 async def bot_connect(request: Request) -> Dict[Any, Any]:
-    return {"ws_url": "ws://localhost:7860/ws"}
-    # ws_url = "wss://7861-01jy2wkc2p4tvtwa6kv8sn28aw.cloudspaces.litng.ai/ws"
-    # return {"ws_url": ws_url}
+    # return {"ws_url": "ws://localhost:7860/ws"}
+    ws_url = f"wss://{request.headers.get('Host')}/ws"
+    return {"ws_url": ws_url}
 
 
 async def main():

@@ -1,5 +1,5 @@
 import os
-
+import json
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -36,16 +36,8 @@ from service.Kokoro.tts import KokoroTTSService
 # from service.chatterbot.tts import ChatterboxTTSService
 
 from pipecat.utils.tracing.setup import setup_tracing
+from tools.tools import json_to_tools_schema
 
-SYSTEM_INSTRUCTION = f"""
-"You are Gemini Chatbot, a friendly, helpful robot.
-
-Your goal is to demonstrate your capabilities in a succinct way.
-
-Your output will be converted to audio so don't include special characters in your answers.
-
-Respond to what the user said in a creative and helpful way. Keep your responses brief. One or two sentences at most.
-"""
 
 load_dotenv(override=True)
 
@@ -65,7 +57,9 @@ if IS_TRACING_ENABLED:
     logger.info("OpenTelemetry tracing initialized")
 
 
-async def run_bot_websocket_server(websocket_client):
+config = json.load(open("config.json"))
+
+async def run_elvenlabs_bot(websocket_client):
     ws_transport = FastAPIWebsocketTransport(
         websocket=websocket_client,
         params=FastAPIWebsocketParams(
@@ -88,45 +82,29 @@ async def run_bot_websocket_server(websocket_client):
         model="smollm:latest",
         # params=OLLamaLLMService.InputParams(temperature=0.7, max_tokens=1000),
     )
+    # TODO get prompt from db and put here and need to initito 11lasb processor  
 
-    # TTS = FishAudioTTSService(
-    #     api_key=os.getenv("CARTESIA_API_KEY"),
-    #     voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Reading Lady
-    # )
-    # async with aiohttp.ClientSession() as session:
-    #     TTS = XTTSService(
-    #         voice_id="speaker_1",
-    #         language=Language.EN,
-    #         base_url="http://localhost:8000",
-    #         aiohttp_session=session
-    #     )
+    # Load tools from config/tools.json
+    with open("config/tools.json") as f:
+        tools_json = json.load(f)
+    tools_schema = json_to_tools_schema(tools_json)
 
     context = OpenAILLMContext(
         [
             {
                 "role": "system",
-                "content": SYSTEM_INSTRUCTION,
+                "content": "You are a helpful assistant.",
             },
             {
                 "role": "user",
                 "content": "Start by greeting the user warmly and introducing yourself.",
             },
         ],
+        tools=tools_schema
     )
     context_aggregator = llm.create_context_aggregator(context)
 
-    # RTVI events for Pipecat client UI
-    # rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
-    # elvenlabs = ElevenLabsProcessor()
-
-    # TTS = KokoroTTSService(
-    #     model_path=os.path.join(
-    #         os.path.dirname(__file__), "assets", "kokoro-v1.0.int8.onnx"
-    #     ),
-    #     voices_path=os.path.join(os.path.dirname(__file__), "assets", "voices.json"),
-    #     voice_id="af",
-    #     sample_rate=16000,
-    # )
+   
 
     TTS = OpenAITTSService(
         base_url="http://localhost:8880/v1",
@@ -135,20 +113,7 @@ async def run_bot_websocket_server(websocket_client):
         sample_rate=24000,
     )
 
-    # TTS = OrpheusTTSService(
-    #     model_name="canopylabs/orpheus-3b-0.1-ft",
-    #     sample_rate=16000,
-    # )
-
-    # TTS = ChatterboxTTSService(
-    #     model_name="",
-    #     sample_rate=16000,
-    # )
-
-    # TTS = DiaTTSService(
-    #     model_name="nari-labs/Dia-1.6B",
-    #     sample_rate=16000,
-    # )
+   
     pipeline = Pipeline(
         [
             ws_transport.input(),
@@ -168,7 +133,7 @@ async def run_bot_websocket_server(websocket_client):
             allow_interruptions=True,
             enable_usage_metrics=True,
         ),
-        # enable_turn_tracking=True,
+        enable_turn_tracking=True,
         enable_tracing=IS_TRACING_ENABLED,
         conversation_id="voice-agent-conversation-1",
     )

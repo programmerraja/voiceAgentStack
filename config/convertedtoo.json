@@ -1,0 +1,15 @@
+{
+    "name": "Book_meeting",
+    "description": "meetingbok",
+    "properties": {
+      "key": {
+        "type": "string",
+        "description": "A prospect key"
+      },
+      "prospectname": {
+        "type": "string",
+        "description": ""
+      }
+    },
+    "required": ["key", "prospectname"]
+  }
