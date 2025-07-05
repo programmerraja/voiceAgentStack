@@ -102,3 +102,56 @@ The application consists of a web-based client and a Python backend. The client 
 ├── requirements.txt              # Python dependencies
 └── ...
 ```
+
+
+
+
+XTTS
+- $ docker run -e COQUI_TOS_AGREED=1 --rm -p 8000:80 ghcr.io/coqui-ai/xtts-streaming-server:latest-cpu
+
+Orpheus
+- git@github.com:Lex-au/Orpheus-FastAPI.git
+
+python -m http.server 8080
+
+
+/path/to/uv/python -m cProfile -o profile.out your_script.py
+
+def log_time_async(threshold=1.0):
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            cls = self.__class__.__name__
+            method = func.__name__
+            start = time.time()
+            result = await func(self, *args, **kwargs)
+            elapsed = time.time() - start
+            if elapsed > threshold:
+                logger.warning(f"{cls}.{method} took {elapsed:.2f}s (> {threshold}s)")
+            return result
+        return wrapper
+    return decorator
+
+
+
+| Spec                        | Detail                                                     |
+| --------------------------- | ---------------------------------------------------------- |
+| **GPU Architecture**        | Turing (TU104GL)                                           |
+| **CUDA Cores**              | 2,560                                                      |
+| **Tensor Cores**            | 320                                                        |
+| **RT Cores**                | None (no real-time ray tracing)                            |
+| **Base Clock**              | \~585 MHz                                                  |
+| **Boost Clock**             | \~1,590 MHz                                                |
+| **Memory**                  | 16 GB GDDR6                                                |
+| **Memory Bandwidth**        | \~320 GB/s                                                 |
+| **TDP**                     | 70 Watts                                                   |
+| **Interface**               | PCIe 3.0 x16                                               |
+| **Form Factor**             | Low-profile, single-slot                                   |
+| **FP32 (Single-Precision)** | \~8.1 TFLOPS                                               |
+| **FP16 (Half-Precision)**   | \~65 TFLOPS (with Tensor Cores)                            |
+| **INT8**                    | \~130 TOPS                                                 |
+| **Target Use**              | AI inference, ML training (small scale), video transcoding |
+| **Virtual Display Output**  | None (headless)                                            |
+
+
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv

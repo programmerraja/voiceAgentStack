@@ -3,6 +3,10 @@ fastapi>=0.115.13
 uvicorn>=0.34.3
 python-dotenv>=1.1.0
 
+# Add core scientific libs required for Moshi STT
+numpy>=1.26.0
+torch>=2.0.0  # Needed for Mimi and Moshi models
+
 # Pipecat with multiple extras
 pipecat-ai[fish,ollama,webrtc,websocket,whisper,deepgram,openai]>=0.0.71
 

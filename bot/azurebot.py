@@ -1,44 +1,37 @@
 import os
-import json
+
 from loguru import logger
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from vad.webrtcvads.webrtcvads import WebRTCVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
-from pipecat.services.ollama.llm import OLLamaLLMService
 
-# from pipecat.services.fish.tts import FishAudioTTSService
-# from pipecat.services.xtts.tts import XTTSService
-from pipecat.transcriptions.language import Language
-# from service.Dia.tts import DiaTTSService
 
-from serializers.elevenlabs import ElevenLabsFrameSerializer
 from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
 )
-from service.whisper.stt import WhisperSTTService
-from pipecat.transports.network.websocket_server import (
-    WebsocketServerParams,
-    WebsocketServerTransport,
-)
-import aiohttp
-from pipecat.services.openai.tts import OpenAITTSService
+from pipecat.services.azure.stt import AzureSTTService
+from pipecat.services.azure.tts import AzureTTSService
+from pipecat.services.azure.llm import AzureLLMService
 from dotenv import load_dotenv
-from service.Kokoro.tts import KokoroTTSService
-# from service.orpheus.tts import OrpheusTTSService
-
-
-# from service.chatterbot.tts import ChatterboxTTSService
 
 from pipecat.utils.tracing.setup import setup_tracing
-from tools.tools import json_to_tools_schema
+from serializers.elevenlabs import ElevenLabsFrameSerializer
 
+SYSTEM_INSTRUCTION = f"""
+"You are Gemini Chatbot, a friendly, helpful robot.
+
+Your goal is to demonstrate your capabilities in a succinct way.
+
+Your output will be converted to audio so don't include special characters in your answers.
+
+Respond to what the user said in a creative and helpful way. Keep your responses brief. One or two sentences at most.
+"""
 
 load_dotenv(override=True)
 
@@ -58,71 +51,60 @@ if IS_TRACING_ENABLED:
     logger.info("OpenTelemetry tracing initialized")
 
 
-config = json.load(open("config.json"))
-
-async def run_elvenlabs_bot(websocket_client):
+async def run_bot_websocket_server(websocket_client):
     ws_transport = FastAPIWebsocketTransport(
         websocket=websocket_client,
         params=FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
-            # vad_analyzer=SileroVADAnalyzer(),
-            vad_analyzer=WebRTCVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(),
             serializer=ElevenLabsFrameSerializer(params=ElevenLabsFrameSerializer.InputParams(audio_format="ulaw",sample_rate=8000)),
         ),
     )
 
-    stt = WhisperSTTService(
-        model="tiny",
-        device="cpu",
-        compute_type="default",
+    stt = AzureSTTService(
+        api_key=os.getenv("AZURE_API_KEY"),
+        region=os.getenv("AZURE_REGION"),
         language="en",
+        sample_rate=24000,
     )
 
-    llm = OLLamaLLMService(
-        model="smollm:latest",
-        # params=OLLamaLLMService.InputParams(temperature=0.7, max_tokens=1000),
+    llm = AzureLLMService(
+        api_key=os.getenv("AZURE_API_KEY"),
+        region=os.getenv("AZURE_REGION"),
+        model="gpt-4o",
+        sample_rate=24000,
     )
-    # TODO get prompt from db and put here and need to initito 11lasb processor  
-
-    # Load tools from config/tools.json
-    with open("config/tools.json") as f:
-        tools_json = json.load(f)
-    tools_schema = json_to_tools_schema(tools_json)
 
     context = OpenAILLMContext(
         [
             {
                 "role": "system",
-                "content": "You are a helpful assistant.",
+                "content": SYSTEM_INSTRUCTION,
             },
             {
                 "role": "user",
                 "content": "Start by greeting the user warmly and introducing yourself.",
             },
         ],
-        tools=tools_schema
     )
     context_aggregator = llm.create_context_aggregator(context)
 
-   
-
-    TTS = OpenAITTSService(
-        base_url="http://localhost:8880/v1",
-        api_key="not-needed",
-        model="kokoro",
+    TTS = AzureTTSService(
+        api_key=os.getenv("AZURE_API_KEY"),
+        region=os.getenv("AZURE_REGION"),
+        voice_id="en-US-AriaNeural",
         sample_rate=24000,
     )
-
-   
+    
     pipeline = Pipeline(
         [
             ws_transport.input(),
-            stt, 
+            stt,  # STT
             context_aggregator.user(),
             llm,
-            TTS,  
+            TTS,  # TTS
             ws_transport.output(),
             context_aggregator.assistant(),
         ]
@@ -135,13 +117,12 @@ async def run_elvenlabs_bot(websocket_client):
             allow_interruptions=True,
             enable_usage_metrics=True,
         ),
-        enable_turn_tracking=True,
+        # enable_turn_tracking=True,
         enable_tracing=IS_TRACING_ENABLED,
         conversation_id="voice-agent-conversation-1",
     )
 
  
-
     @ws_transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Pipecat Client connected")

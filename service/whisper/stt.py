@@ -9,6 +9,9 @@
 import asyncio
 from enum import Enum
 from typing import AsyncGenerator, Optional
+import json
+import websockets
+import time
 
 import numpy as np
 from loguru import logger
@@ -20,6 +23,9 @@ from pipecat.transcriptions.language import Language
 from pipecat.utils.time import time_now_iso8601
 from pipecat.utils.tracing.service_decorators import traced_stt
 from faster_whisper import WhisperModel
+
+import struct
+
 # if TYPE_CHECKING:
 #     try:
 #         from faster_whisper import WhisperModel
@@ -512,3 +518,104 @@ class WhisperSTTServiceMLX(WhisperSTTService):
         except Exception as e:
             logger.exception(f"MLX Whisper transcription error: {e}")
             yield ErrorFrame(f"MLX Whisper transcription error: {str(e)}")
+
+
+
+
+
+
+
+class WebSocketSTTService(SegmentedSTTService):
+    """Transcribe audio using an external Whisper WS backend."""
+
+    def __init__(
+        self,
+        *,
+        ws_url: str = "ws://localhost:9800",
+        no_speech_prob: float = 0.4,
+        language: Language = Language.EN,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self._no_speech_prob = no_speech_prob
+        self._settings = {
+            "language": language,
+            "ws_url": ws_url,
+            "no_speech_prob": self._no_speech_prob,
+        }
+
+        self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._loop = asyncio.get_event_loop()
+
+        # Init persistent connection on startup
+        self._loop.create_task(self._connect_ws())
+
+    async def _connect_ws(self):
+        try:
+            logger.info(f"Connecting to WS backend: {self._settings['ws_url']}")
+            self._ws = await websockets.connect(self._settings["ws_url"])
+            logger.info(f"Connected to WS backend.")
+        except Exception as e:
+            logger.exception(f"Failed to connect to WS backend: {e}")
+            self._ws = None
+
+    async def close(self):
+        """Gracefully close the WS connection when shutting down."""
+        if self._ws:
+            await self._ws.close()
+            logger.info("Closed WS connection")
+
+    def can_generate_metrics(self) -> bool:
+        return True
+
+    def language_to_service_language(self, language: Language) -> Optional[str]:
+        return language_to_whisper_language(language)
+
+    async def set_language(self, language: Language):
+        logger.info(f"Switching STT language to: [{language}]")
+        self._settings["language"] = language
+
+    @traced_stt
+    async def _handle_transcription(
+        self, transcript: str, is_final: bool, language: Optional[Language] = None
+    ):
+        pass  # your handler logic
+
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
+        """Send audio chunk to persistent WS, yield text."""
+        if not self._ws or self._ws.closed:
+            logger.warning("WS not connected, reconnecting...")
+            await self._connect_ws()
+            if not self._ws:
+                yield ErrorFrame("WS connection failed")
+                return
+
+        await self.start_processing_metrics()
+        await self.start_ttfb_metrics()
+
+        try:
+            logger.info(f"Sending audio to WS: {len(audio)} bytes")
+            await self._ws.send(audio)
+            stt_start = time.perf_counter()
+            logger.info(f"Audio sent to WS")
+            result = await self._ws.recv()
+            stt_end = time.perf_counter()
+            logger.info(f"STT time: {stt_end - stt_start:.2f} seconds")
+            logger.info(f"Result received from WS: {result}")
+            if result.startswith("ERROR:"):
+                yield ErrorFrame(result)
+                return
+
+            text = result.strip()
+            if text:
+                await self._handle_transcription(text, True, self._settings["language"])
+                logger.debug(f"Transcription: [{text}]")
+                yield TranscriptionFrame(text, "", time_now_iso8601(), self._settings["language"])
+
+        except Exception as e:
+            logger.exception(e)
+            yield ErrorFrame(f"WS failed: {str(e)}")
+
+        await self.stop_ttfb_metrics()
+        await self.stop_processing_metrics()
